@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+env/
+ENV/
+
+# Scrapy
+.scrapy/
+
+# Project outputs
+*.xlsx
+*.csv
+movie_urls.txt
+
+# Debug/test files
+debug_*.py
+quick_debug.py
+check_sitemap.py
+nul
+
+# Environment
+.env
+
+# OS
+.DS_Store
+Thumbs.db
+~$*
+
+# IDEs
+.vscode/
+.idea/
+*.swp
