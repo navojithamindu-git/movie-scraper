@@ -25,7 +25,7 @@ async def main():
     print(f"✓ Found {len(movie_urls)} movie URLs")
 
     # Optional: Limit for testing (uncomment and adjust as needed)
-    # movie_urls = movie_urls[:100]  # Test with first 100 movies
+    # movie_urls = movie_urls[:10]  # Test with first 100 movies
     # print(f"  → Limited to {len(movie_urls)} movies for testing")
 
     # Step 2: Scrape all movies with Playwright

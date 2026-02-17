@@ -66,19 +66,19 @@ class SitemapParser:
 
         return urls
 
-    def filter_movie_urls(self, urls: List[str]) -> List[str]:
-        """Filter only movie URLs"""
-        movie_urls = []
-        movie_pattern = re.compile(r'/movie/[^/]+$')
+    def filter_content_urls(self, urls: List[str]) -> List[str]:
+        """Filter movie and TV series URLs"""
+        content_urls = []
+        content_pattern = re.compile(r'/(movie|tv)/[^/]+$')
 
         for url in urls:
-            if movie_pattern.search(url):
-                movie_urls.append(url)
+            if content_pattern.search(url):
+                content_urls.append(url)
 
-        return movie_urls
+        return content_urls
 
     def get_all_movie_urls(self) -> List[str]:
-        """Main method to get all movie URLs from sitemap"""
+        """Main method to get all movie and TV series URLs from sitemap"""
         print("Fetching sitemap...")
 
         # Try different sitemap URLs
@@ -109,14 +109,14 @@ class SitemapParser:
                     child_xml = self.fetch_sitemap(child_sitemap)
                     if child_xml:
                         urls = self.parse_sitemap(child_xml)
-                        movie_urls = self.filter_movie_urls(urls)
+                        movie_urls = self.filter_content_urls(urls)
                         print(f"     Found {len(movie_urls)} movie URLs")
                         all_movie_urls.extend(movie_urls)
             else:
                 # Direct sitemap
                 print(f"  → Found direct sitemap")
                 urls = self.parse_sitemap(xml_content)
-                movie_urls = self.filter_movie_urls(urls)
+                movie_urls = self.filter_content_urls(urls)
                 print(f"  → Found {len(movie_urls)} movie URLs")
                 all_movie_urls.extend(movie_urls)
 

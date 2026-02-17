@@ -29,9 +29,13 @@ class PlaywrightMovieScraper:
             # Wait for main content to load
             await page.wait_for_selector('.heading-name, .description', timeout=10000)
 
+            # Determine type from URL
+            content_type = 'TV Series' if '/tv/' in url else 'Movie'
+
             # Extract movie details
             movie_data = {
                 'url': url,
+                'type': content_type,
                 'scraped_at': datetime.now().isoformat()
             }
 
