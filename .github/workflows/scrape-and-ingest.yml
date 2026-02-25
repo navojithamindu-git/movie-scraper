@@ -1,0 +1,90 @@
+name: Daily Scrape and Ingest
+
+on:
+  schedule:
+    # Runs every day at 2:00 AM UTC
+    - cron: '0 2 * * *'
+  # Also allows manual trigger from GitHub Actions UI
+  workflow_dispatch:
+
+jobs:
+  scrape-and-ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300  # 5 hour cap (GitHub allows 6 hours max)
+
+    steps:
+      # 1. Check out the movie-scraper repo
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Set up Python
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # 3. Restore scraped_movies.json and URL cache from previous run
+      # Using separate restore + save (not cache@v4 shorthand) so cache
+      # is ALWAYS saved even if the scraper is killed by the timeout.
+      - name: Restore scrape cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            scraped_movies.json
+            movie_urls_cache.json
+          key: scrape-data-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            scrape-data-${{ runner.os }}-
+
+      # 4. Install Python dependencies
+      - name: Install dependencies
+        run: pip install playwright==1.58.0 requests pandas openpyxl
+
+      # 5. Install Chromium browser for Playwright
+      - name: Install Playwright Chromium
+        run: playwright install chromium --with-deps
+
+      # 6. Run the scraper
+      # Saves every 500 movies — if killed by timeout, progress is kept.
+      # Next run resumes automatically (skips already-scraped URLs).
+      - name: Run scraper
+        run: python main_playwright.py
+        continue-on-error: true  # Don't fail the job if scraper times out
+
+      # 7. Save cache — runs even on failure or timeout
+      - name: Save scrape cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            scraped_movies.json
+            movie_urls_cache.json
+          key: scrape-data-${{ runner.os }}-${{ github.run_id }}
+
+      # 8. Wake up the Render backend (free tier sleeps after 15min idle)
+      - name: Wake up Render backend
+        run: |
+          echo "Pinging backend to wake it up..."
+          curl --retry 5 --retry-delay 15 --retry-connrefused \
+            -f "${{ secrets.RECOMO_API_URL }}/api/health" || true
+          echo "Waiting 30s for full warm-up..."
+          sleep 30
+
+      # 9. Ingest new movies into Supabase via the Render backend
+      - name: Ingest movies
+        env:
+          RECOMO_API_URL: ${{ secrets.RECOMO_API_URL }}
+        run: python ingest.py --api "$RECOMO_API_URL"
+
+      # 10. Print summary
+      - name: Summary
+        if: always()
+        run: |
+          echo "=== Run complete ==="
+          if [ -f scraped_movies.json ]; then
+            python -c "
+          import json
+          d = json.load(open('scraped_movies.json'))
+          print(f'Total movies in scraped_movies.json: {len(d)}')
+          "
+          fi

@@ -1,79 +1,114 @@
+"""
+Phase 1: Scrape all movie data from sitemap and save to scraped_movies.json
+Resumable — skips already-scraped URLs on restart.
+
+Usage: python main_playwright.py
+"""
+
 import asyncio
+import json
+import os
+import time
+
 from sitemap_parser import SitemapParser
 from scraper.playwright_scraper import PlaywrightMovieScraper
-from storage.data_store import DataStore
-from config import MONGO_URI, DB_NAME, COLLECTION_NAME
-import time
+
+SCRAPED_FILE = "scraped_movies.json"
+URL_CACHE_FILE = "movie_urls_cache.json"
+BATCH_SIZE = 500
+
+
+def load_scraped():
+    if os.path.exists(SCRAPED_FILE):
+        with open(SCRAPED_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return []
+
+
+def save_scraped(movies):
+    with open(SCRAPED_FILE, "w", encoding="utf-8") as f:
+        json.dump(movies, f, ensure_ascii=False, indent=2)
+
+
+def get_all_urls():
+    """Load URLs from cache if available, otherwise fetch from sitemap."""
+    if os.path.exists(URL_CACHE_FILE):
+        with open(URL_CACHE_FILE, "r", encoding="utf-8") as f:
+            urls = json.load(f)
+        print(f"Loaded {len(urls)} URLs from cache ({URL_CACHE_FILE})")
+        return urls
+
+    print("Fetching movie URLs from sitemap...")
+    parser = SitemapParser(base_url="https://myflixerz.to")
+    urls = parser.get_all_movie_urls()
+
+    if urls:
+        with open(URL_CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump(urls, f)
+        print(f"Cached {len(urls)} URLs to {URL_CACHE_FILE}")
+
+    return urls
 
 
 async def main():
-    """Main function to orchestrate sitemap parsing and movie scraping"""
+    print("=" * 70)
+    print("PHASE 1: SCRAPE MOVIE DATA")
+    print("=" * 70)
+    print(f"Output: {SCRAPED_FILE}")
+    print(f"Batch size: {BATCH_SIZE}")
+    print("Stop anytime with Ctrl+C — progress is saved.\n")
 
-    print("="*70)
-    print("MYFLIXER MOVIE SCRAPER - PLAYWRIGHT VERSION")
-    print("="*70)
+    all_urls = get_all_urls()
 
-    # Step 1: Get all movie URLs from sitemap
-    print("\n[1/4] Fetching movie URLs from sitemap...")
-    parser = SitemapParser(base_url="https://myflixerz.to")
-    movie_urls = parser.get_all_movie_urls()
-
-    if not movie_urls:
-        print("❌ No movie URLs found in sitemap. Exiting.")
+    if not all_urls:
+        print("No movie URLs found. Check your connection and try again.")
         return
 
-    print(f"✓ Found {len(movie_urls)} movie URLs")
+    print(f"Found {len(all_urls)} movie URLs")
 
-    # Optional: Limit for testing (uncomment and adjust as needed)
-    # movie_urls = movie_urls[:10]  # Test with first 100 movies
-    # print(f"  → Limited to {len(movie_urls)} movies for testing")
+    # Find remaining URLs
+    existing = load_scraped()
+    scraped_urls = {m["url"] for m in existing}
+    remaining_urls = [u for u in all_urls if u not in scraped_urls]
 
-    # Step 2: Scrape all movies with Playwright
-    print(f"\n[2/4] Scraping movie details with Playwright...")
-    scraper = PlaywrightMovieScraper(
-        max_concurrent=10,  # Adjust based on your system (5-15 is good)
-        headless=True       # Set to False to see browsers in action
-    )
-
-    movies_data = await scraper.scrape_all(movie_urls)
-
-    if not movies_data:
-        print("❌ No movies scraped successfully. Exiting.")
+    if not remaining_urls:
+        print(f"\nAll {len(all_urls)} movies already scraped!")
+        print(f"Run 'python ingest.py' to send them to the API.")
         return
 
-    print(f"✓ Successfully scraped {len(movies_data)} movies")
+    print(f"Already scraped: {len(existing)}")
+    print(f"Remaining: {len(remaining_urls)}")
 
-    # Step 3: Save to MongoDB
-    print(f"\n[3/4] Saving to MongoDB...")
-    store = DataStore(MONGO_URI, DB_NAME, COLLECTION_NAME)
+    scraper = PlaywrightMovieScraper(max_concurrent=3, headless=True)
 
-    saved_count = 0
-    for movie in movies_data:
-        try:
-            store.insert_movie(movie)
-            saved_count += 1
-        except Exception as e:
-            print(f"  ✗ Error saving movie '{movie.get('title', 'Unknown')}': {e}")
+    for batch_start in range(0, len(remaining_urls), BATCH_SIZE):
+        batch_urls = remaining_urls[batch_start:batch_start + BATCH_SIZE]
+        batch_num = batch_start // BATCH_SIZE + 1
+        total_batches = (len(remaining_urls) + BATCH_SIZE - 1) // BATCH_SIZE
 
-    print(f"✓ Saved {saved_count} movies to MongoDB")
+        print(f"\n--- Batch {batch_num}/{total_batches} ({len(batch_urls)} URLs) ---")
 
-    # Step 4: Export to Excel
-    print(f"\n[4/4] Exporting to Excel...")
-    try:
-        excel_file = store.export_to_excel(movies_data)
-        print(f"✓ Exported to {excel_file}")
-    except Exception as e:
-        print(f"✗ Error exporting to Excel: {e}")
+        results = await scraper.scrape_all(batch_urls)
 
-    # Summary
-    print("\n" + "="*70)
-    print("SCRAPING COMPLETED!")
-    print("="*70)
-    print(f"Total URLs found:     {len(movie_urls)}")
-    print(f"Successfully scraped: {len(movies_data)}")
-    print(f"Saved to MongoDB:     {saved_count}")
-    print(f"Excel export:         ✓")
-    print("="*70)
+        # Find failed URLs and retry once with lower concurrency
+        succeeded_urls = {m["url"] for m in results}
+        failed_urls = [u for u in batch_urls if u not in succeeded_urls]
+
+        if failed_urls:
+            print(f"\nRetrying {len(failed_urls)} failed URLs (concurrency=3)...")
+            retry_scraper = PlaywrightMovieScraper(max_concurrent=3, headless=True)
+            retry_results = await retry_scraper.scrape_all(failed_urls)
+            results.extend(retry_results)
+            still_failed = len(failed_urls) - len(retry_results)
+            if still_failed:
+                print(f"  {still_failed} URLs failed after retry (skipped)")
+
+        existing.extend(results)
+        save_scraped(existing)
+        print(f"Checkpoint: {len(existing)} total movies saved to {SCRAPED_FILE}")
+
+    print(f"\nScraping complete: {len(existing)} movies in {SCRAPED_FILE}")
+    print(f"Next step: python ingest.py")
 
 
 if __name__ == "__main__":
@@ -82,11 +117,8 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("\n\n⚠ Scraping interrupted by user")
-    except Exception as e:
-        print(f"\n\n❌ Fatal error: {e}")
-        import traceback
-        traceback.print_exc()
+        print("\n\nStopped. Progress saved — run again to resume.")
 
     elapsed = time.time() - start_time
-    print(f"\nTotal execution time: {elapsed/60:.2f} minutes ({elapsed:.1f} seconds)")
+    print(f"\nTime: {elapsed/60:.1f} minutes")
+u

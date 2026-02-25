@@ -1,4 +1,5 @@
 import asyncio
+import random
 from playwright.async_api import async_playwright, Browser, Page
 from typing import List, Dict, Optional
 import time
@@ -24,7 +25,7 @@ class PlaywrightMovieScraper:
         """Scrape details from a single movie page"""
         try:
             # Navigate to the page
-            await page.goto(url, timeout=30000, wait_until='domcontentloaded')
+            await page.goto(url, timeout=60000, wait_until='domcontentloaded')
 
             # Wait for main content to load
             await page.wait_for_selector('.heading-name, .description', timeout=10000)
@@ -44,6 +45,19 @@ class PlaywrightMovieScraper:
                 title = await page.text_content('.heading-name', timeout=3000)
                 if title:
                     movie_data['title'] = title.strip()
+            except:
+                pass
+
+            # Poster image
+            try:
+                poster = await page.wait_for_selector('img.film-poster-img', timeout=5000)
+                if poster:
+                    # Try src first, then data-src (lazy-loaded images)
+                    src = await poster.get_attribute('src')
+                    if not src or src.startswith('data:'):
+                        src = await poster.get_attribute('data-src')
+                    if src:
+                        movie_data['image_url'] = src
             except:
                 pass
 
@@ -164,6 +178,8 @@ class PlaywrightMovieScraper:
     async def scrape_single(self, browser: Browser, url: str, semaphore: asyncio.Semaphore) -> Optional[Dict]:
         """Scrape a single movie URL with semaphore control"""
         async with semaphore:
+            # Random delay to avoid triggering rate limits
+            await asyncio.sleep(random.uniform(1.5, 4.0))
             context = await browser.new_context(
                 viewport={'width': 1280, 'height': 720},
                 user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
