@@ -26,7 +26,7 @@ def fetch_existing_urls(api_url):
     """Fetch all URLs already in the DB — one fast query to avoid slow per-movie skips."""
     print(f"Fetching already-ingested URLs from DB ({api_url})...")
     try:
-        resp = requests.get(f"{api_url}/api/movies/urls", timeout=60)
+        resp = requests.get(f"{api_url}/api/movies/urls", timeout=(10, 30))
         resp.raise_for_status()
         urls = set(resp.json())
         print(f"  {len(urls)} movies already in DB — skipping them.\n")

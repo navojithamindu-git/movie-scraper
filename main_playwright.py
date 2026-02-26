@@ -121,4 +121,3 @@ if __name__ == "__main__":
 
     elapsed = time.time() - start_time
     print(f"\nTime: {elapsed/60:.1f} minutes")
-u
