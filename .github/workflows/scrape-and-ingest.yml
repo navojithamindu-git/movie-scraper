@@ -81,7 +81,7 @@ jobs:
           RECOMO_API_URL: ${{ secrets.RECOMO_API_URL }}
         run: |
           API_URL=$(echo "$RECOMO_API_URL" | tr -d '[:space:]')
-          python ingest.py --api "$API_URL"
+          python -u ingest.py --api "$API_URL"
 
       # 10. Print summary
       - name: Summary
