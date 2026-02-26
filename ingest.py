@@ -12,6 +12,7 @@ Requires: RecoMo backend running (uvicorn app.main:app --reload)
 import argparse
 import json
 import os
+import sys
 import time
 
 import requests
@@ -96,6 +97,11 @@ def main():
             print(f"  Progress: {i}/{total} | Ingested: {saved} | Failed: {failed}")
 
     print(f"\nDone: {saved} ingested, {failed} failed")
+
+    # Exit with error if everything failed (e.g. backend unreachable)
+    if total > 0 and saved == 0:
+        print(f"\nERROR: 0 out of {total} movies ingested — backend may be unreachable.", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
