@@ -32,7 +32,7 @@ jobs:
           path: |
             scraped_movies.json
             movie_urls_cache.json
-          key: scrape-data-${{ runner.os }}-${{ github.run_id }}
+          key: scrape-data-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             scrape-data-${{ runner.os }}-
 
@@ -59,10 +59,11 @@ jobs:
           path: |
             scraped_movies.json
             movie_urls_cache.json
-          key: scrape-data-${{ runner.os }}-${{ github.run_id }}
+          key: scrape-data-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
 
-      # 8. Wake up the Render backend (free tier sleeps after 15min idle)
-      - name: Wake up Render backend
+      # 8. Wake up the Railway/Render backend
+      - name: Wake up backend
+        if: always()
         run: |
           echo "Pinging backend to wake it up..."
           curl --retry 5 --retry-delay 15 --retry-connrefused \
@@ -70,8 +71,9 @@ jobs:
           echo "Waiting 30s for full warm-up..."
           sleep 30
 
-      # 9. Ingest new movies into Supabase via the Render backend
+      # 9. Ingest new movies into Supabase via the backend
       - name: Ingest movies
+        if: always()
         env:
           RECOMO_API_URL: ${{ secrets.RECOMO_API_URL }}
         run: python ingest.py --api "$RECOMO_API_URL"
