@@ -64,10 +64,13 @@ jobs:
       # 8. Wake up the Railway/Render backend
       - name: Wake up backend
         if: always()
+        env:
+          RECOMO_API_URL: ${{ secrets.RECOMO_API_URL }}
         run: |
+          API_URL=$(echo "$RECOMO_API_URL" | tr -d '[:space:]')
           echo "Pinging backend to wake it up..."
           curl --retry 5 --retry-delay 15 --retry-connrefused \
-            -f "${{ secrets.RECOMO_API_URL }}/api/health" || true
+            -f "${API_URL}/api/health" || true
           echo "Waiting 30s for full warm-up..."
           sleep 30
 
@@ -76,7 +79,9 @@ jobs:
         if: always()
         env:
           RECOMO_API_URL: ${{ secrets.RECOMO_API_URL }}
-        run: python ingest.py --api "$RECOMO_API_URL"
+        run: |
+          API_URL=$(echo "$RECOMO_API_URL" | tr -d '[:space:]')
+          python ingest.py --api "$API_URL"
 
       # 10. Print summary
       - name: Summary
